@@ -5,8 +5,7 @@ from os.path import join
 import numpy as np
 import nibabel as nib
 import glob
-import neural_renderer as nr
-
+# import neural_renderer as nr
 
 
 

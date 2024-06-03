@@ -10,8 +10,10 @@ from torch.autograd import Variable
 from tqdm import tqdm
 import time
 from torch.utils.tensorboard import SummaryWriter
-from pytorch3d.structures import Meshes
-from pytorch3d import loss
+# from pytorch3d.structures import Meshes
+# from pytorch3d import loss
+import meshpy.triangle as triangle 
+import meshpy as mp
 
 from network_motion import *
 from dataio_motion import *
@@ -55,7 +57,28 @@ TensorLong = torch.cuda.LongTensor
 # visualisation
 writer = SummaryWriter('./runs/model_motion')
 
+def compute_laplacian_matrix(vertices, faces):
+    n = len(vertices)
+    L = np.zeros((n, n))
 
+    for face in faces:
+        for i in range(3):
+            for j in range(3):
+                if i != j:
+                    L[face[i], face[j]] = -1
+                    L[face[i], face[i]] += 1
+    
+    return L
+
+# Step 3: Perform Laplacian Smoothing
+def laplacian_smoothing(vertices, faces, iterations=10, alpha=0.1):
+    L = compute_laplacian_matrix(vertices, faces)
+    V = vertices.copy()
+
+    for _ in range(iterations):
+        V = V + alpha * (L @ V)
+    
+    return V
 
 def train(epoch):
     MotionNet.train()
@@ -224,8 +247,13 @@ def train(epoch):
 
         #----------------smoothness loss------------
         # print (pred_vertex_t.permute(0,2,1).shape)
-        trg_mesh = Meshes(verts=list(pred_vertex_t.permute(0, 2, 1)), faces=list(faces_0))
-        loss_smooth = loss.mesh_laplacian_smoothing(trg_mesh, method='uniform')
+        # trg_mesh = Meshes(verts=list(pred_vertex_t.permute(0, 2, 1)), faces=list(faces_0))
+        mesh_info = triangle.MeshInfo()
+        mesh_info.set_points(pred_vertex_t.permute(0, 2, 1).squeeze().cpu().detach().numpy())
+        mesh_info.set_facets(faces_0.squeeze().cpu().detach().numpy())
+        trg_mesh = triangle.build(mesh_info, max_volume=0.1, min_angle=25, allow_boundary_steiner=True)
+        # loss_smooth = loss.mesh_laplacian_smoothing(trg_mesh, method='uniform')
+        loss_smooth = laplacian_smoothing(trg_mesh, faces, iterations=10, alpha=0.1)
 
         # ----------------regularization loss------------
 
@@ -423,8 +451,13 @@ def val(epoch):
 
             # ----------------smoothness loss------------
             # print (pred_vertex_t.permute(0,2,1).shape)
-            trg_mesh = Meshes(verts=list(pred_vertex_t.permute(0, 2, 1)), faces=list(faces_0))
-            loss_smooth = loss.mesh_laplacian_smoothing(trg_mesh, method='uniform')
+            # trg_mesh = Meshes(verts=list(pred_vertex_t.permute(0, 2, 1)), faces=list(faces_0))
+            # loss_smooth = loss.mesh_laplacian_smoothing(trg_mesh, method='uniform')
+            mesh_info = triangle.MeshInfo()
+            mesh_info.set_points(pred_vertex_t.permute(0, 2, 1).squeeze().cpu().detach().numpy())
+            mesh_info.set_facets(faces_0.squeeze().cpu().detach().numpy())
+            trg_mesh = triangle.build(mesh_info, max_volume=0.1, min_angle=25, allow_boundary_steiner=True)
+            loss_smooth = laplacian_smoothing(trg_mesh, faces, iterations=10, alpha=0.1)
 
             # ----------------regularization loss------------
 
